@@ -1,74 +1,150 @@
-import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
-import path from "path";
+"use client";
 
-const execAsync = promisify(exec);
+import { useEffect, useRef, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Draggable from "react-draggable";
+import CodeEditor from "./CodeEditor";
+import AIPanel from "./AIPanel";
+import ProfessorReviewTab from "./ProfessorReviewTab"; 
 
-export async function POST(req: Request): Promise<Response> {
-  let filePath = ""; // Define outside to use in cleanup
-  
-  try {
-    const { code, language } = await req.json();
+function RoomContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const zpRef = useRef<any>(null);
+  const nodeRef = useRef(null);
 
-    if (!code) {
-      return NextResponse.json({ error: "No code provided" }, { status: 400 });
-    }
+  const [showEditor, setShowEditor] = useState(true);
+  const [showAI, setShowAI] = useState(false);
+  const [code, setCode] = useState("// Start coding...");
+  const [language, setLanguage] = useState("python");
+  const [lastRunData, setLastRunData] = useState<any>(null);
 
-    const id = Math.random().toString(36).substring(7);
-    const tempDir = path.join(process.cwd(), "temp_exec");
-    await fs.mkdir(tempDir, { recursive: true });
+  // Safely get search params
+  const sessionId = searchParams.get("sessionId") || "test-room";
+  const role = searchParams.get("role") || "student";
+  const userName = searchParams.get("name") || "Anonymous";
 
-    let fileName = "";
-    let dockerImage = "";
-    let runCommand = "";
+  const handleCodeExecution = (executionData: { code: string; output: string; language: string }) => {
+    setLastRunData({ ...executionData, studentName: userName });
+  };
 
-    switch (language) {
-      case "python":
-        fileName = `s_${id}.py`;
-        dockerImage = "python:3.10-slim";
-        runCommand = `python /app/${fileName}`;
-        break;
-      case "javascript":
-        fileName = `s_${id}.js`;
-        dockerImage = "node:18-slim";
-        runCommand = `node /app/${fileName}`;
-        break;
-      case "cpp":
-        fileName = `s_${id}.cpp`;
-        dockerImage = "gcc:latest";
-        runCommand = `g++ /app/${fileName} -o /app/out && /app/out`;
-        break;
-      default:
-        return NextResponse.json({ error: "Unsupported language" }, { status: 400 });
-    }
+  useEffect(() => {
+    let isMounted = true;
 
-    filePath = path.join(tempDir, fileName);
-    await fs.writeFile(filePath, code);
+    const initVideo = async () => {
+      try {
+        // Dynamic import is CRITICAL for Vercel builds to prevent 'document is not defined'
+        const { ZegoUIKitPrebuilt } = await import("@zegocloud/zego-uikit-prebuilt");
+        
+        if (!isMounted || !containerRef.current) return;
 
-    // Run Docker
-    const { stdout, stderr } = await execAsync(
-      `docker run --rm -v "${tempDir}":/app ${dockerImage} sh -c "${runCommand}"`,
-      { timeout: 5000 }
-    );
+        // Use environment variables or fallback
+        const appID = Number(process.env.NEXT_PUBLIC_ZEGO_APP_ID) || 1229551732;
+        const serverSecret = process.env.NEXT_PUBLIC_ZEGO_SERVER_SECRET || "40990824d9dff7f992df09ab658c72dd";
 
-    // Cleanup
-    await fs.unlink(filePath).catch(() => {});
+        const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+          appID, 
+          serverSecret, 
+          sessionId, 
+          Date.now().toString(), 
+          userName
+        );
 
-    return NextResponse.json({ stdout, stderr });
+        const zp = ZegoUIKitPrebuilt.create(kitToken);
+        zpRef.current = zp;
 
-  } catch (error: any) {
-    // 💡 IMPORTANT: If code has a syntax error, Docker/Exec throws an error.
-    // We still want to send that error back to the student.
-    if (filePath) await fs.unlink(filePath).catch(() => {});
+        zp.joinRoom({
+          container: containerRef.current,
+          scenario: { mode: ZegoUIKitPrebuilt.VideoConference },
+          showPreJoinView: false,
+          turnOnCameraWhenJoining: true,
+          showUserList: true,
+          onLeaveRoom: () => {
+            if (zpRef.current) {
+              try {
+                zpRef.current.destroy();
+              } catch (e) {
+                console.warn("Zego internal cleanup handled");
+              } finally {
+                zpRef.current = null;
+                router.replace(`/dashboard/${role}`);
+              }
+            }
+          },
+        });
+      } catch (e) {
+        console.error("Zego Initialization Failed:", e);
+      }
+    };
 
-    return NextResponse.json(
-      { 
-        stdout: error.stdout || "", 
-        stderr: error.stderr || error.message || "Execution Error" 
-      }, 
-      { status: 200 } // Return 200 so the frontend can display the compiler error
-    );
-  }
+    initVideo();
+
+    return () => {
+      isMounted = false;
+      if (zpRef.current) {
+        try {
+          zpRef.current.destroy();
+        } catch (e) {
+          console.log("Cleanup handled on unmount");
+        } finally {
+          zpRef.current = null;
+        }
+      }
+    };
+  }, [sessionId, role, router, userName]);
+
+  return (
+    <div className="flex flex-col h-screen w-full bg-[#050505] text-white relative overflow-hidden">
+      <nav className="h-14 border-b border-white/5 flex items-center justify-between px-6 bg-[#0d1117]/80 backdrop-blur-md z-50 shadow-2xl">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center text-[10px] font-black">C</div>
+            <h1 className="text-xs font-black uppercase tracking-widest text-zinc-200">Live Classroom</h1>
+          </div>
+          <span className="text-[10px] font-mono text-zinc-500 uppercase">Room: {sessionId}</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button onClick={() => setShowEditor(!showEditor)} className="px-4 py-1.5 rounded-full text-[10px] font-bold border border-white/20">
+            {showEditor ? "HIDE EDITOR" : "SHOW EDITOR"}
+          </button>
+          <button onClick={() => setShowAI(!showAI)} className="px-4 py-1.5 rounded-full text-[10px] font-bold bg-purple-600 text-white">
+            AI TUTOR
+          </button>
+        </div>
+      </nav>
+
+      <div className="flex flex-1 overflow-hidden relative">
+        <div className={`transition-all duration-500 ease-in-out border-r border-white/5 bg-[#1e1e1e] shadow-2xl z-20 ${showEditor ? "w-1/2" : "w-0 overflow-hidden"}`}>
+          <CodeEditor 
+            code={code} setCode={setCode} language={language} setLanguage={setLanguage} 
+            roomId={sessionId} onRun={handleCodeExecution}
+          />
+        </div>
+        {/* Changed to style height to ensure it doesn't collapse to 0px */}
+        <div className="flex-1 bg-black relative z-10" style={{ minHeight: '400px' }}>
+          <div className="absolute inset-0" ref={containerRef} />
+        </div>
+        {role === "tutor" && <ProfessorReviewTab lastRunData={lastRunData} />}
+      </div>
+
+      {showAI && (
+        <Draggable nodeRef={nodeRef} handle=".handle" bounds="parent">
+          <div ref={nodeRef} className="absolute top-20 right-10 w-85 h-[550px] z-[9999]">
+            <AIPanel activeCode={code} language={language} onClose={() => setShowAI(false)} />
+          </div>
+        </Draggable>
+      )}
+    </div>
+  );
+}
+
+// Ensure EXPORT DEFAULT exists for app/room/page.tsx to find it
+export default function VideoRoom() {
+  return (
+    <Suspense fallback={<div className="h-screen w-full bg-black flex items-center justify-center font-bold text-white">PREPARING CLASSROOM...</div>}>
+      <RoomContent />
+    </Suspense>
+  );
 }
