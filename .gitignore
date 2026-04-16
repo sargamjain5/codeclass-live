@@ -1,6 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
+# ------------------------------------------------------------------------------
+# DEPENDENCIES
+# ------------------------------------------------------------------------------
 /node_modules
 /.pnp
 .pnp.*
@@ -10,32 +12,40 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
-
-# next.js
+# ------------------------------------------------------------------------------
+# NEXT.JS & BUILD OUTPUTS
+# ------------------------------------------------------------------------------
 /.next/
 /out/
-
-# production
 /build
+/coverage
+*.tsbuildinfo
+next-env.d.ts
 
-# misc
+# ------------------------------------------------------------------------------
+# LOCAL EXECUTION (DOCKER TEMP FILES)
+# ------------------------------------------------------------------------------
+# This prevents student code snippets from being pushed to your repo
+/temp/
+/temp_exec/
+
+# ------------------------------------------------------------------------------
+# ENVIRONMENT SECRETS (CRITICAL)
+# ------------------------------------------------------------------------------
+# Protects your ZegoCloud AppID and Server Secret
+.env
+.env.local
+.env.production
+.env.test
+.env*.local
+
+# ------------------------------------------------------------------------------
+# MISC / DEBUG
+# ------------------------------------------------------------------------------
 .DS_Store
 *.pem
-
-# debug
+.vercel
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
