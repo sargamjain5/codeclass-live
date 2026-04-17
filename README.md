@@ -1,3 +1,5 @@
+LearnsSync: A collaborative, real-time technical interview and architecture brainstorming platform. Built with Next.js 16, Socket.io, and ReactFlow, this app allows multiple users to write code and design system architectures simultaneously in a shared virtual room.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
